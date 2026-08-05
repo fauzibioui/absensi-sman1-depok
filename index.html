@@ -1528,8 +1528,24 @@
         // ============================================================
         // START APLIKASI
         // ============================================================
-        document.getElementById('loginUsername').value = 'admin';
-        document.getElementById('loginPassword').value = 'admin123';
+        // ============================================================
+        // LOGIN PAGE SETUP - KOSONGKAN FORM & AMBIL TAHUN AJARAN
+        // ============================================================
+        document.getElementById('loginUsername').value = '';
+        document.getElementById('loginPassword').value = '';
+
+        async function updateLoginYear() {
+            try {
+                const schoolSnap = await db.collection("settings").doc("school").get();
+                if (schoolSnap.exists) {
+                    const schoolData = schoolSnap.data();
+                    document.getElementById('loginYear').textContent = schoolData.academicYear || '2025/2026';
+                }
+            } catch (e) {
+                console.log("Gagal mengambil tahun ajaran, menggunakan default.");
+            }
+        }
+        updateLoginYear();
         console.log('🚀 Aplikasi siap. Silakan login.');
     </script>
 </body>
