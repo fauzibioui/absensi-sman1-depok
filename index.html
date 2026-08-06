@@ -406,54 +406,67 @@
         // ============================================================
         // FUNGSI BACA DATA DARI FIRESTORE
         // ============================================================
-        async function loadData() {
-            try {
-                const kelasSnap = await db.collection("classes").get();
-                data.classes = [];
-                kelasSnap.forEach(doc => {
-                    data.classes.push({ id: doc.id, ...doc.data() });
-                });
-
-                const muridSnap = await db.collection("students").get();
-                data.students = [];
-                muridSnap.forEach(doc => {
-                    data.students.push({ id: doc.id, ...doc.data() });
-                });
-
-                const sevenDaysAgo = new Date();
-                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                const startStr = formatDate(sevenDaysAgo);
-                const absenSnap = await db.collection("attendance").where("date", ">=", startStr).get();
-                data.attendance = [];
-                absenSnap.forEach(doc => {
-                    data.attendance.push({ id: doc.id, ...doc.data() });
-                });
-
-                const userSnap = await db.collection("users").get();
-                data.users = [];
-                userSnap.forEach(doc => {
-                    data.users.push({ id: doc.id, ...doc.data() });
-                });
-
-                const schoolSnap = await db.collection("settings").doc("school").get();
-                if (schoolSnap.exists) {
-                    data.school = schoolSnap.data();
-                } else {
-                    data.school = { schoolName: 'SMAN 1 Kota Depok', academicYear: '2025/2026', logoUrl: '', headline: 'Aplikasi Absensi SMAN 1 Depok' };
-                }
-
-                renderDashboard();
-                initAbsensi();
-                initRekap();
-                renderKelas();
-                renderMurid();
-                initPengaturan();
-                updateHeadline();
-                updateNavbar();
-            } catch (e) {
-                console.error("Error loadData:", e);
-            }
+async function loadData() {
+    try {
+        // 1. LOAD KELAS (dengan cache)
+        let cachedClasses = getCachedData('classes');
+        if (cachedClasses) {
+            data.classes = cachedClasses;
+        } else {
+            const snap = await db.collection("classes").get();
+            data.classes = [];
+            snap.forEach(doc => {
+                data.classes.push({ id: doc.id, ...doc.data() });
+            });
+            cacheData('classes', data.classes, 3600000);
         }
+
+        // 2. LOAD SETTINGS SEKOLAH
+        const schoolSnap = await db.collection("settings").doc("school").get();
+        if (schoolSnap.exists) {
+            data.school = schoolSnap.data();
+        } else {
+            data.school = { schoolName: 'SMAN 1 Kota Depok', academicYear: '2025/2026', logoUrl: '', headline: 'Aplikasi Absensi SMAN 1 Depok' };
+        }
+
+        // 3. LOAD STUDENTS (tergantung role)
+        if (['admin', 'guru_piket', 'guru_kelas'].includes(currentUser.role)) {
+            await loadStudentsWithPagination(1);
+        } else if (currentUser.role === 'murid' && currentUser.classId) {
+            const snap = await db.collection("students")
+                .where("classId", "==", currentUser.classId)
+                .limit(100)
+                .get();
+            data.students = [];
+            snap.forEach(doc => {
+                data.students.push({ id: doc.id, ...doc.data() });
+            });
+        }
+
+        // 4. LOAD USERS (hanya untuk admin)
+        if (currentUser.role === 'admin') {
+            await loadUsersOptimized();
+        }
+
+        // 5. JANGAN LOAD ATTENDANCE SEMUA
+        // Attendance akan di-load per halaman
+
+        renderDashboard();
+        initAbsensi();
+        initRekap();
+        renderKelas();
+        renderMurid();
+        if (currentUser.role === 'admin') {
+            renderUserManagement();
+        }
+        initPengaturan();
+        updateHeadline();
+        updateNavbar();
+    } catch (e) {
+        console.error("Error loadData:", e);
+        alert('⚠️ Gagal memuat data. Silakan refresh halaman.');
+    }
+}
 
         // ============================================================
         // FUNGSI SIMPAN KE FIRESTORE
