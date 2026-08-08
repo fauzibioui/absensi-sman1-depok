@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Absensi & Manajemen Kelas</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <!-- SheetJS untuk Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row justify-between items-center gap-3">
+            <div class="flex items-center gap-3">
+                <div class="bg-blue-600 text-white p-2 rounded-xl font-bold text-xl">📚</div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-800">Sistem Manajemen Absensi & Kelas</h1>
+                    <p class="text-xs text-gray-500">Terhubung ke Firebase dengan Optimasi Cache Lokal</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="connection-status" class="text-xs px-3 py-1 bg-yellow-50 text-yellow-700 rounded-full border border-yellow-200 font-medium">Memuat Sistem...</span>
+                <button onclick="switchTab('dashboard')" class="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 rounded-lg transition">Dashboard</button>
+                <button onclick="switchTab('classes')" class="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 rounded-lg transition">Kelas</button>
+                <button onclick="switchTab('students')" class="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 rounded-lg transition">Siswa</button>
+                <button onclick="switchTab('attendance')" class="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition">Absensi</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
+        
+        <!-- TAB: DASHBOARD -->
+        <div id="tab-dashboard" class="tab-content space-y-6 hidden">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-gray-500 uppercase font-semibold">Total Siswa</p>
+                        <h3 id="stat-total-students" class="text-2xl font-bold text-gray-800 mt-1">0</h3>
+                    </div>
+                    <div class="p-3 bg-blue-50 text-blue-600 rounded-xl text-xl">👨‍🎓</div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-gray-500 uppercase font-semibold">Total Kelas</p>
+                        <h3 id="stat-total-classes" class="text-2xl font-bold text-gray-800 mt-1">0</h3>
+                    </div>
+                    <div class="p-3 bg-green-50 text-green-600 rounded-xl text-xl">🏫</div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-gray-500 uppercase font-semibold">Status Cache</p>
+                        <h3 id="stat-cache-status" class="text-lg font-bold text-emerald-600 mt-1">Aktif</h3>
+                    </div>
+                    <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-xl">⚡</div>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                <h3 class="text-lg font-bold mb-2">Selamat Datang di Sistem Absensi</h3>
+                <p class="text-gray-600 text-sm mb-4">Aplikasi ini telah dioptimalkan agar berjalan sangat cepat, hemat kuota internet, serta aman dari error indeks Firebase berkat penggunaan sistem cache lokal.</p>
+                <button onclick="initApp()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">Sinkronisasi / Muat Ulang Data</button>
+            </div>
+        </div>
+
+        <!-- TAB: KELAS -->
+        <div id="tab-classes" class="tab-content space-y-6 hidden">
+            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center">
+                <div>
+                    <h2 class="text-lg font-bold">Manajemen Kelas</h2>
+                    <p class="text-sm text-gray-500">Kelola daftar kelas yang tersedia di sekolah.</p>
+                </div>
+                <button onclick="openAddClassModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">+ Tambah Kelas</button>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase font-semibold">
+                            <th class="p-4">Nama Kelas</th>
+                            <th class="p-4">Wali Kelas / Keterangan</th>
+                            <th class="p-4 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="classes-table-body">
+                        <tr><td colspan="3" class="p-6 text-center text-gray-400">Memuat data kelas...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB: SISWA -->
+        <div id="tab-students" class="tab-content space-y-6 hidden">
+            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h2 class="text-lg font-bold">Manajemen Siswa</h2>
+                    <p class="text-sm text-gray-500">Kelola data siswa dan import data dari Excel.</p>
+                </div>
+                <div class="flex gap-2">
+                    <label class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition cursor-pointer">
+                        Import Excel <input type="file" id="import-excel-file" accept=".xlsx, .xls" class="hidden" onchange="importStudentsFromExcel(event)">
+                    </label>
+                    <button onclick="openAddStudentModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">+ Tambah Siswa</button>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase font-semibold">
+                            <th class="p-4">NIS / No Induk</th>
+                            <th class="p-4">Nama Lengkap</th>
+                            <th class="p-4">Kelas</th>
+                            <th class="p-4 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="students-table-body">
+                        <tr><td colspan="4" class="p-6 text-center text-gray-400">Memuat data siswa...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB: ABSENSI -->
+        <div id="tab-attendance" class="tab-content space-y-6">
+            <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-4 items-end justify-between">
+                <div class="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Pilih Kelas</label>
+                        <select id="attendance-class-select" class="w-full sm:w-64 p-2.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="">-- Pilih Kelas --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Pilih Tanggal</label>
+                        <input type="date" id="attendance-date-input" class="w-full sm:w-auto p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                </div>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button onclick="loadAttendanceView()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition flex-1 sm:flex-none">Tampilkan</button>
+                    <button onclick="saveCurrentAttendance()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition flex-1 sm:flex-none">Simpan Absensi</button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase font-semibold">
+                            <th class="p-4">No</th>
+                            <th class="p-4">Nama Siswa</th>
+                            <th class="p-4 text-center">Status Kehadiran (H / S / I / A)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="attendance-table-body">
+                        <tr><td colspan="3" class="p-8 text-center text-gray-400">Silakan pilih kelas dan tanggal terlebih dahulu.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal Form Sederhana -->
+    <div id="modal-container" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center p-4 z-50">
+        <div id="modal-content" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <!-- Konten Modal Dinamis -->
+        </div>
+    </div>
+
+    <!-- Script Aplikasi -->
+    <script>
+        // ==========================================
+        // KONFIGURASI FIREBASE ANDA
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBBivruP8SMA5MQopfemiXpO5LvLOxx7fQ",
+            authDomain: "absensi-sman1-f49d3.firebaseapp.com",
+            projectId: "absensi-sman1-f49d3",
+            storageBucket: "absensi-sman1-f49d3.firebasestorage.app",
+            messagingSenderId: "207183929663",
+            appId: "1:207183929663:web:a0fe86b6ff43abca94338a"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        // Variabel Global
+        let allStudentsData = [];
+        let allClassesData = [];
+
+        // ==========================================
+        // SISTEM CACHE LOKAL (OPTIMASI UTAMA)
+        // ==========================================
+        function getCacheData(key) {
+            const item = localStorage.getItem('firebase_cache_' + key);
+            if (!item) return null;
+            try {
+                const parsed = JSON.parse(item);
+                if (Date.now() > parsed.expiry) {
+                    localStorage.removeItem('firebase_cache_' + key);
+                    return null;
+                }
+                return parsed.data;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function cacheData(key, data, ttlMs = 300000) { // Default cache 5 menit
+            const payload = {
+                data: data,
+                expiry: Date.now() + ttlMs
+            };
+            localStorage.setItem('firebase_cache_' + key, JSON.stringify(payload));
+        }
+
+        function clearCachePattern(prefix) {
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('firebase_cache_' + prefix)) {
+                    localStorage.removeItem(key);
+                }
+            }
+        }
+
+        // ==========================================
+        // FUNGSI FIREBASE YANG DIOPTIMASI
+        // ==========================================
+        async function loadAllStudents() {
+            try {
+                let cached = getCacheData('all_students');
+                if (cached) {
+                    allStudentsData = cached;
+                    return allStudentsData;
+                }
+                
+                const snap = await db.collection("students").limit(5000).get();
+                allStudentsData = [];
+                snap.forEach(doc => {
+                    allStudentsData.push({ id: doc.id, ...doc.data() });
+                });
+                
+                cacheData('all_students', allStudentsData, 300000);
+                return allStudentsData;
+            } catch (e) {
+                console.error("Error loading students:", e);
+                return [];
+            }
+        }
+
+        async function loadAllClasses() {
+            try {
+                let cached = getCacheData('all_classes');
+                if (cached) {
+                    allClassesData = cached;
+                    return allClassesData;
+                }
+                
+                const snap = await db.collection("classes").limit(500).get();
+                allClassesData = [];
+                snap.forEach(doc => {
+                    allClassesData.push({ id: doc.id, ...doc.data() });
+                });
+                
+                cacheData('all_classes', allClassesData, 300000);
+                return allClassesData;
+            } catch (e) {
+                console.error("Error loading classes:", e);
+                return [];
+            }
+        }
+
+        async function loadAttendanceByClass(classId, date) {
+            try {
+                const cacheKey = 'attendance_' + classId + '_' + date;
+                let cached = getCacheData(cacheKey);
+                if (cached) return cached;
+                
+                const snap = await db.collection("attendance")
+                    .where("classId", "==", classId)
+                    .where("date", "==", date)
+                    .limit(500)
+                    .get();
+                
+                const result = [];
+                snap.forEach(doc => {
+                    result.push({ id: doc.id, ...doc.data() });
+                });
+                
+                cacheData(cacheKey, result, 300000);
+                return result;
+            } catch (e) {
+                console.error("Error loading attendance:", e);
+                return [];
+            }
+        }
+
+        async function saveAttendance(classId, date, records) {
+            if (!records || records.length === 0) {
+                alert('Tidak ada data absensi untuk disimpan.');
+                return false;
+            }
+            
+            try {
+                const oldSnap = await db.collection("attendance")
+                    .where("classId", "==", classId)
+                    .where("date", "==", date)
+                    .limit(records.length + 10)
+                    .get();
+                
+                const batch = db.batch();
+                oldSnap.forEach(doc => batch.delete(doc.ref));
+                
+                records.forEach(r => {
+                    const ref = db.collection("attendance").doc();
+                    batch.set(ref, r);
+                });
+                
+                await batch.commit();
+                
+                // Hapus cache absensi tanggal tersebut
+                localStorage.removeItem('firebase_cache_attendance_' + classId + '_' + date);
+                
+                alert('Absensi berhasil disimpan!');
+                return true;
+            } catch (e) {
+                console.error("Error saving attendance:", e);
+                alert('Gagal menyimpan absensi.');
+                return false;
+            }
+        }
+
+        // ==========================================
+        // NAVIGASI & UI RENDERER
+        // ==========================================
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            
+            if (tabId === 'classes') renderClassesTable();
+            if (tabId === 'students') renderStudentsTable();
+            if (tabId === 'dashboard') updateDashboardStats();
+        }
+
+        function updateDashboardStats() {
+            document.getElementById('stat-total-students').innerText = allStudentsData.length;
+            document.getElementById('stat-total-classes').innerText = allClassesData.length;
+        }
+
+        async function initApp() {
+            const statusEl = document.getElementById('connection-status');
+            statusEl.innerText = "Menghubungkan...";
+            statusEl.className = "text-xs px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200 font-medium";
+
+            try {
+                await Promise.all([loadAllStudents(), loadAllClasses()]);
+                
+                statusEl.innerText = "Sistem Terhubung (Optimized)";
+                statusEl.className = "text-xs px-3 py-1 bg-green-50 text-green-700 rounded-full border border-green-200 font-medium";
+                
+                populateClassDropdowns();
+                updateDashboardStats();
+                
+                // Set default tanggal hari ini
+                const today = new Date().toISOString().split('T')[0];
+                const dateInput = document.getElementById('attendance-date-input');
+                if (dateInput && !dateInput.value) dateInput.value = today;
+
+            } catch (e) {
+                statusEl.innerText = "Koneksi Bermasalah";
+                statusEl.className = "text-xs px-3 py-1 bg-red-50 text-red-700 rounded-full border border-red-200 font-medium";
+            }
+        }
+
+        function populateClassDropdowns() {
+            const select = document.getElementById('attendance-class-select');
+            if (!select) return;
+            
+            let currentVal = select.value;
+            select.innerHTML = '<option value="">-- Pilih Kelas --</option>';
+            
+            allClassesData.forEach(c => {
+                select.innerHTML += `<option value="${c.id}">${c.name || c.className || 'Kelas Tanpa Nama'}</option>`;
+            });
+            
+            if (currentVal) select.value = currentVal;
+        }
+
+        function renderClassesTable() {
+            const tbody = document.getElementById('classes-table-body');
+            if (allClassesData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="p-6 text-center text-gray-400">Belum ada data kelas.</td></tr>`;
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            allClassesData.forEach(c => {
+                tbody.innerHTML += `
+                    <tr class="border-b border-gray-100 hover:bg-gray-50 text-sm">
+                        <td class="p-4 font-medium">${c.name || c.className || '-'}</td>
+                        <td class="p-4 text-gray-600">${c.teacher || c.description || '-'}</td>
+                        <td class="p-4 text-right">
+                            <button onclick="deleteClass('${c.id}')" class="text-red-600 hover:underline text-xs">Hapus</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function renderStudentsTable() {
+            const tbody = document.getElementById('students-table-body');
+            if (allStudentsData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-gray-400">Belum ada data siswa. Silakan import dari Excel atau tambah manual.</td></tr>`;
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            allStudentsData.forEach(s => {
+                // Cari nama kelas berdasarkan classId
+                const cls = allClassesData.find(c => c.id === s.classId);
+                const className = cls ? (cls.name || cls.className) : '-';
+                
+                tbody.innerHTML += `
+                    <tr class="border-b border-gray-100 hover:bg-gray-50 text-sm">
+                        <td class="p-4 font-mono text-xs">${s.nis || s.nisn || '-'}</td>
+                        <td class="p-4 font-medium">${s.name || s.studentName || '-'}</td>
+                        <td class="p-4 text-gray-600">${className}</td>
+                        <td class="p-4 text-right">
+                            <button onclick="deleteStudent('${s.id}')" class="text-red-600 hover:underline text-xs">Hapus</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        // ==========================================
+        // FITUR ABSENSI & TAMPILAN INTERAKTIF
+        // ==========================================
+        async function loadAttendanceView() {
+            const classId = document.getElementById('attendance-class-select').value;
+            const date = document.getElementById('attendance-date-input').value;
+            const tbody = document.getElementById('attendance-table-body');
+            
+            if (!classId || !date) {
+                alert('Silakan pilih kelas dan tanggal terlebih dahulu.');
+                return;
+            }
+            
+            tbody.innerHTML = `<tr><td colspan="3" class="p-8 text-center text-gray-400">Memuat data absensi...</td></tr>`;
+            
+            // Filter siswa berdasarkan kelas yang dipilih
+            const studentsInClass = allStudentsData.filter(s => s.classId === classId);
+            
+            if (studentsInClass.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="p-8 text-center text-gray-400">Tidak ada siswa di kelas ini.</td></tr>`;
+                return;
+            }
+            
+            // Ambil data absensi yang sudah tersimpan pada tanggal tersebut
+            const existingAttendance = await loadAttendanceByClass(classId, date);
+            
+            tbody.innerHTML = '';
+            studentsInClass.forEach((s, index) => {
+                // Cek status absensi sebelumnya jika ada
+                const record = existingAttendance.find(r => r.studentId === s.id);
+                const status = record ? record.status : 'H'; // Default Hadir (H)
+                
+                tbody.innerHTML += `
+                    <tr class="border-b border-gray-100 hover:bg-gray-50 text-sm" data-student-id="${s.id}">
+                        <td class="p-4 text-gray-500 font-mono text-xs">${index + 1}</td>
+                        <td class="p-4 font-medium">${s.name || s.studentName}</td>
+                        <td class="p-4 text-center">
+                            <div class="inline-flex rounded-lg p-1 bg-gray-100 gap-1">
+                                <button type="button" onclick="setAttendanceStatus(this, 'H')" class="px-3 py-1 rounded text-xs font-bold transition ${status === 'H' ? 'bg-green-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}">H</button>
+                                <button type="button" onclick="setAttendanceStatus(this, 'S')" class="px-3 py-1 rounded text-xs font-bold transition ${status === 'S' ? 'bg-amber-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}">S</button>
+                                <button type="button" onclick="setAttendanceStatus(this, 'I')" class="px-3 py-1 rounded text-xs font-bold transition ${status === 'I' ? 'bg-blue-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}">I</button>
+                                <button type="button" onclick="setAttendanceStatus(this, 'A')" class="px-3 py-1 rounded text-xs font-bold transition ${status === 'A' ? 'bg-red-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}">A</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function setAttendanceStatus(btn, status) {
+            const container = btn.parentElement;
+            container.querySelectorAll('button').forEach(b => {
+                b.className = "px-3 py-1 rounded text-xs font-bold transition text-gray-600 hover:bg-gray-200";
+            });
+            
+            if (status === 'H') btn.className = "px-3 py-1 rounded text-xs font-bold transition bg-green-600 text-white shadow";
+            if (status === 'S') btn.className = "px-3 py-1 rounded text-xs font-bold transition bg-amber-500 text-white shadow";
+            if (status === 'I') btn.className = "px-3 py-1 rounded text-xs font-bold transition bg-blue-500 text-white shadow";
+            if (status === 'A') btn.className = "px-3 py-1 rounded text-xs font-bold transition bg-red-600 text-white shadow";
+            
+            btn.setAttribute('data-selected-status', status);
+        }
+
+        async function saveCurrentAttendance() {
+            const classId = document.getElementById('attendance-class-select').value;
+            const date = document.getElementById('attendance-date-input').value;
+            
+            if (!classId || !date) {
+                alert('Pilih kelas dan tanggal terlebih dahulu.');
+                return;
+            }
+            
+            const rows = document.querySelectorAll('#attendance-table-body tr[data-student-id]');
+            const records = [];
+            
+            rows.forEach(row => {
+                const studentId = row.getAttribute('data-student-id');
+                const selectedBtn = row.querySelector('button.bg-green-600, button.bg-amber-500, button.bg-blue-500, button.bg-red-600');
+                const status = selectedBtn ? selectedBtn.innerText : 'H';
+                
+                records.push({
+                    classId: classId,
+                    date: date,
+                    studentId: studentId,
+                    status: status,
+                    updatedAt: new Date().toISOString()
+                });
+            });
+            
+            await saveAttendance(classId, date, records);
+        }
+
+        // ==========================================
+        // IMPORT EXCEL MENGGUNAKAN SHEETJS
+        // ==========================================
+        async function importStudentsFromExcel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+                    
+                    if (json.length === 0) {
+                        alert('File Excel kosong atau format tidak sesuai.');
+                        return;
+                    }
+                    
+                    if (!confirm(`Ditemukan ${json.length} baris data siswa. Lanjutkan proses import ke Firebase?`)) {
+                        return;
+                    }
+                    
+                    const batch = db.batch();
+                    json.forEach(row => {
+                        const ref = db.collection("students").doc();
+                        batch.set(ref, {
+                            nis: String(row.NIS || row.nis || row.NISN || ''),
+                            name: String(row.Nama || row.nama || row.StudentName || 'Tanpa Nama'),
+                            classId: String(row.ClassID || row.classId || ''),
+                            createdAt: new Date().toISOString()
+                        });
+                    });
+                    
+                    await batch.commit();
+                    
+                    // Bersihkan cache siswa
+                    localStorage.removeItem('firebase_cache_all_students');
+                    
+                    alert('Import data siswa berhasil!');
+                    await loadAllStudents();
+                    renderStudentsTable();
+                    updateDashboardStats();
+                } catch (err) {
+                    console.error("Import error:", err);
+                    alert('Gagal mengimport file Excel. Pastikan format kolom sesuai.');
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // ==========================================
+        // TAMBAH / HAPUS DATA SEDERHANA
+        // ==========================================
+        function openAddClassModal() {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            
+            content.innerHTML = `
+                <h3 class="text-lg font-bold">Tambah Kelas Baru</h3>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nama Kelas</label>
+                    <input type="text" id="input-new-class-name" class="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="Contoh: XII IPA 1">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Wali Kelas / Keterangan</label>
+                    <input type="text" id="input-new-class-teacher" class="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="Contoh: Budi, S.Pd">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button onclick="closeModal()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">Batal</button>
+                    <button onclick="submitNewClass()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">Simpan</button>
+                </div>
+            `;
+            modal.classList.remove('hidden');
+        }
+
+        async function submitNewClass() {
+            const name = document.getElementById('input-new-class-name').value.trim();
+            const teacher = document.getElementById('input-new-class-teacher').value.trim();
+            
+            if (!name) {
+                alert('Nama kelas tidak boleh kosong.');
+                return;
+            }
+            
+            try {
+                await db.collection("classes").add({
+                    name: name,
+                    teacher: teacher,
+                    createdAt: new Date().toISOString()
+                });
+                
+                localStorage.removeItem('firebase_cache_all_classes');
+                closeModal();
+                await loadAllClasses();
+                renderClassesTable();
+                populateClassDropdowns();
+                updateDashboardStats();
+                alert('Kelas berhasil ditambahkan!');
+            } catch (e) {
+                console.error(e);
+                alert('Gagal menambah kelas.');
+            }
+        }
+
+        function openAddStudentModal() {
+            const modal = document.getElementById('modal-container');
+            const content = document.getElementById('modal-content');
+            
+            let classOptions = allClassesData.map(c => `<option value="${c.id}">${c.name || c.className}</option>`).join('');
+            
+            content.innerHTML = `
+                <h3 class="text-lg font-bold">Tambah Siswa Baru</h3>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">NIS / No Induk</label>
+                    <input type="text" id="input-new-student-nis" class="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="Contoh: 10293">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Nama Lengkap</label>
+                    <input type="text" id="input-new-student-name" class="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="Contoh: Siti Aminah">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Pilih Kelas</label>
+                    <select id="input-new-student-class" class="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
+                        <option value="">-- Pilih Kelas --</option>
+                        ${classOptions}
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button onclick="closeModal()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">Batal</button>
+                    <button onclick="submitNewStudent()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">Simpan</button>
+                </div>
+            `;
+            modal.classList.remove('hidden');
+        }
+
+        async function submitNewStudent() {
+            const nis = document.getElementById('input-new-student-nis').value.trim();
+            const name = document.getElementById('input-new-student-name').value.trim();
+            const classId = document.getElementById('input-new-student-class').value;
+            
+            if (!name || !classId) {
+                alert('Nama siswa dan kelas wajib diisi.');
+                return;
+            }
+            
+            try {
+                await db.collection("students").add({
+                    nis: nis,
+                    name: name,
+                    classId: classId,
+                    createdAt: new Date().toISOString()
+                });
+                
+                localStorage.removeItem('firebase_cache_all_students');
+                closeModal();
+                await loadAllStudents();
+                renderStudentsTable();
+                updateDashboardStats();
+                alert('Siswa berhasil ditambahkan!');
+            } catch (e) {
+                console.error(e);
+                alert('Gagal menambah siswa.');
+            }
+        }
+
+        async function deleteClass(classId) {
+            if (!confirm('Hapus kelas ini?')) return;
+            try {
+                await db.collection("classes").doc(classId).delete();
+                localStorage.removeItem('firebase_cache_all_classes');
+                await loadAllClasses();
+                renderClassesTable();
+                populateClassDropdowns();
+                updateDashboardStats();
+            } catch (e) {
+                alert('Gagal menghapus kelas.');
+            }
+        }
+
+        async function deleteStudent(studentId) {
+            if (!confirm('Hapus siswa ini?')) return;
+            try {
+                await db.collection("students").doc(studentId).delete();
+                localStorage.removeItem('firebase_cache_all_students');
+                await loadAllStudents();
+                renderStudentsTable();
+                updateDashboardStats();
+            } catch (e) {
+                alert('Gagal menghapus siswa.');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+        // Inisialisasi saat halaman dimuat
+        window.onload = function() {
+            initApp();
+        };
+    </script>
+</body>
+</html>
